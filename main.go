@@ -2,17 +2,60 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 	"log"
+	"sync"
+	"time"
 )
 
-func main() {
-	//fmt.Println("Welcome to the playground! Here is your session number: ", getRandomInt())
+type Req struct {
+	MsgId   int    `json:"msg_id"`
+	MsgType string `json:"type"`
+}
+
+type Resp struct {
+	MsgId   int    `json:"msg_id"`
+	ID      string `json:"id"`
+	MsgType string `json:"type"`
+}
+
+type Counter struct {
+	mutex sync.Mutex
+	value int64
+}
+
+func (c *Counter) incCounter() {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.value < 0 {
+		c.value = 0
+	}
+
+	c.value += 1
+}
+
+func (c *Counter) getNewCounter() int64 {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.value += 1
+
+	return c.value
+}
+
+var (
+	counter Counter
+	//for cheating purpose
+	lock     sync.Mutex
+	globalId int64 = 1
+)
+
+//main code for distributed workshop series with Shawn Nguyen
+func distributedSession() {
 
 	n := maelstrom.NewNode()
 
 	n.Handle("echo", func(msg maelstrom.Message) error {
-		// Unmarshal the message body as an loosely-typed map.
 		var body map[string]any
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
@@ -25,7 +68,55 @@ func main() {
 		return n.Reply(msg, body)
 	})
 
+	n.Handle("generate", func(msg maelstrom.Message) error {
+		var body Req
+		if err := json.Unmarshal(msg.Body, &body); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, Resp{
+			MsgId:   body.MsgId,
+			ID:      fmt.Sprintf("%d", counter.getNewCounter()),
+			MsgType: "generate_ok",
+		})
+	})
+
+	//cheating with micro time & msg_id
+	n.Handle("generate_cheat", func(msg maelstrom.Message) error {
+		var body Req
+		if err := json.Unmarshal(msg.Body, &body); err != nil {
+			return err
+		}
+
+		lock.Lock()
+		defer lock.Unlock()
+		globalId++
+
+		return n.Reply(msg, Resp{
+			MsgId:   body.MsgId,
+			ID:      fmt.Sprintf("%d%d", body.MsgId, time.Now().UnixMicro()),
+			MsgType: "generate_ok",
+		})
+	})
+
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+//local playground sections for try things
+func testingFunc() {
+	//fmt.Println("Welcome to the playground! Here is your session number: ", getRandomInt())
+
+	counter := Counter{value: 0}
+	for i := 1; i < 10000; i++ {
+		go counter.incCounter()
+	}
+	time.Sleep(time.Second)
+	fmt.Print("final value: ", counter.value)
+}
+
+func main() {
+	distributedSession()
+	testingFunc()
 }
