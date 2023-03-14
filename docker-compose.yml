@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  playground:
+    container_name: "ds-playground"
+    networks:
+      - playground
+    build:
+      context: .
+      dockerfile: "Dockerfile"
+      platforms:
+        - "linux/arm64"
+    ports:
+      - 8080:8080
+networks:
+  playground:
+    name: playground
+    driver: bridge
