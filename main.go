@@ -12,6 +12,7 @@ import (
 type Req struct {
 	MsgId   int    `json:"msg_id"`
 	MsgType string `json:"type"`
+	Message int    `json:"message"`
 }
 
 type Resp struct {
@@ -54,6 +55,7 @@ var (
 func distributedSession() {
 	n := maelstrom.NewNode()
 
+	//===========task 1===========
 	n.Handle("echo", func(msg maelstrom.Message) error {
 		var body map[string]any
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -67,6 +69,7 @@ func distributedSession() {
 		return n.Reply(msg, body)
 	})
 
+	//===========task 2===========
 	n.Handle("generate", func(msg maelstrom.Message) error {
 		var body Req
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -81,7 +84,6 @@ func distributedSession() {
 		})
 	})
 
-	//cheating with micro time & msg_id
 	n.Handle("generate_cheat", func(msg maelstrom.Message) error {
 		var body Req
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -93,6 +95,52 @@ func distributedSession() {
 			ID:      fmt.Sprintf("%d%d", body.MsgId, time.Now().UnixMicro()),
 			MsgType: "generate_ok",
 		})
+	})
+
+	//===========task 3===========
+	var (
+		globalSet []int
+	)
+
+	type ReadResp struct {
+		MsgType  string `json:"type"`
+		Messages []int  `json:"messages"`
+	}
+	type TopologyResp struct {
+		MsgId   int    `json:"msg_id"`
+		MsgType string `json:"type"`
+	}
+
+	n.Handle("broadcast", func(msg maelstrom.Message) error {
+		var body Req
+		if err := json.Unmarshal(msg.Body, &body); err != nil {
+			return err
+		}
+
+		body.MsgType = "broadcast_ok"
+		globalSet = append(globalSet, body.Message)
+		return n.Reply(msg, &TopologyResp{MsgId: body.MsgId,
+			MsgType: "broadcast_ok"})
+	})
+
+	n.Handle("read", func(msg maelstrom.Message) error {
+		var body Req
+		if err := json.Unmarshal(msg.Body, &body); err != nil {
+			return err
+		}
+
+		body.MsgType = "read_ok"
+		resp := ReadResp{MsgType: "read_ok", Messages: globalSet}
+		return n.Reply(msg, resp)
+	})
+
+	n.Handle("topology", func(msg maelstrom.Message) error {
+		var body Req
+		if err := json.Unmarshal(msg.Body, &body); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, &TopologyResp{MsgId: body.MsgId, MsgType: "topology_ok"})
 	})
 
 	if err := n.Run(); err != nil {
