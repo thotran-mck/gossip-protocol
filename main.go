@@ -44,7 +44,7 @@ func (c *Counter) getNewCounter() int64 {
 }
 
 var (
-	counter Counter
+	counter = Counter{value: 0}
 	//for cheating purpose
 	lock     sync.Mutex
 	globalId int64 = 1
@@ -52,7 +52,6 @@ var (
 
 //main code for distributed workshop series with Shawn Nguyen
 func distributedSession() {
-
 	n := maelstrom.NewNode()
 
 	n.Handle("echo", func(msg maelstrom.Message) error {
@@ -75,8 +74,9 @@ func distributedSession() {
 		}
 
 		return n.Reply(msg, Resp{
-			MsgId:   body.MsgId,
-			ID:      fmt.Sprintf("%d", counter.getNewCounter()),
+			MsgId: body.MsgId,
+			ID: fmt.Sprintf("%d-%d", time.Now().UnixMicro(),
+				counter.getNewCounter()),
 			MsgType: "generate_ok",
 		})
 	})
@@ -109,8 +109,8 @@ func testingFunc() {
 	//fmt.Println("Welcome to the playground! Here is your session number: ", getRandomInt())
 
 	counter := Counter{value: 0}
-	for i := 1; i < 10000; i++ {
-		go counter.incCounter()
+	for i := 1; i < 10000000; i++ {
+		go counter.getNewCounter()
 	}
 	time.Sleep(time.Second)
 	fmt.Print("final value: ", counter.value)
