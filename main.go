@@ -106,7 +106,7 @@ func distributedSession() {
 		MsgType  string `json:"type"`
 		Messages []int  `json:"messages"`
 	}
-	type TopologyResp struct {
+	type Task3aResp struct {
 		MsgId   int    `json:"msg_id"`
 		MsgType string `json:"type"`
 	}
@@ -119,7 +119,7 @@ func distributedSession() {
 
 		body.MsgType = "broadcast_ok"
 		globalSet = append(globalSet, body.Message)
-		return n.Reply(msg, &TopologyResp{MsgId: body.MsgId,
+		return n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
 			MsgType: "broadcast_ok"})
 	})
 
@@ -134,13 +134,18 @@ func distributedSession() {
 		return n.Reply(msg, resp)
 	})
 
+	type TopologyReq struct {
+		Req
+		Topology map[string][]string
+	}
+
 	n.Handle("topology", func(msg maelstrom.Message) error {
-		var body Req
+		var body TopologyReq
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
 
-		return n.Reply(msg, &TopologyResp{MsgId: body.MsgId, MsgType: "topology_ok"})
+		return n.Reply(msg, &Task3aResp{MsgId: body.MsgId, MsgType: "topology_ok"})
 	})
 
 	if err := n.Run(); err != nil {
