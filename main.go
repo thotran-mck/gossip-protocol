@@ -88,10 +88,6 @@ func distributedSession() {
 			return err
 		}
 
-		lock.Lock()
-		defer lock.Unlock()
-		globalId++
-
 		return n.Reply(msg, Resp{
 			MsgId:   body.MsgId,
 			ID:      fmt.Sprintf("%d%d", body.MsgId, time.Now().UnixMicro()),
