@@ -99,7 +99,9 @@ func distributedSession() {
 
 	//===========task 3===========
 	var (
-		globalSet []int
+		globalSet  []int
+		nodeMap    = make(map[string][]string) //map to store the topology
+		historyMap = make(map[string]int)      //map to keep track update history
 	)
 
 	type ReadResp struct {
@@ -111,14 +113,74 @@ func distributedSession() {
 		MsgType string `json:"type"`
 	}
 
+	type BroadcastReq struct {
+		Req
+		TrackKey string `json:"track_key"`
+	}
+
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
-		var body Req
+		var body BroadcastReq
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
+		//body.MsgType = "broadcast_ok"
+		//globalSet = append(globalSet, body.Message)
 
-		body.MsgType = "broadcast_ok"
-		globalSet = append(globalSet, body.Message)
+		if len(body.TrackKey) == 0 {
+			globalSet = append(globalSet, body.Message)
+
+			//save to history map
+			timeKey := fmt.Sprintf("%s_%d", msg.Dest, time.Now().UnixMicro())
+
+			lock.Lock()
+			historyMap[timeKey] = body.Message
+			lock.Unlock()
+
+			body.TrackKey = timeKey
+
+			//broadcast to others
+			if nodeMap[msg.Dest] != nil {
+				neighbors := nodeMap[msg.Dest]
+				for _, dest := range neighbors {
+					//n.RPC(dest, body, func(msg maelstrom.Message) error {
+					//	//do nothing for now
+					//	return nil
+					//})
+
+					n.Send(dest, body)
+				}
+			}
+		} else {
+			//check key exists
+			lock.Lock()
+			_, ok := historyMap[body.TrackKey]
+			lock.Unlock()
+
+			if ok {
+				//do nothing
+			} else {
+				//add new value to global set
+				globalSet = append(globalSet, body.Message)
+
+				//save history
+				lock.Lock()
+				historyMap[body.TrackKey] = body.Message
+				lock.Unlock()
+
+				//broadcast to others
+				neighbors := nodeMap[msg.Dest]
+				for _, dest := range neighbors {
+					//n.RPC(dest, body, func(msg maelstrom.Message) error {
+					//	//do nothing for now
+					//	return nil
+					//})
+
+					n.Send(dest, body)
+
+				}
+			}
+		}
+
 		return n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
 			MsgType: "broadcast_ok"})
 	})
@@ -145,6 +207,14 @@ func distributedSession() {
 			return err
 		}
 
+		//nodeMap = body.Topology
+		for k, v := range body.Topology {
+			clone := make([]string, len(v))
+			copy(clone, v)
+			key := k
+			nodeMap[key] = clone
+		}
+
 		return n.Reply(msg, &Task3aResp{MsgId: body.MsgId, MsgType: "topology_ok"})
 	})
 
@@ -157,12 +227,20 @@ func distributedSession() {
 func testingFunc() {
 	//fmt.Println("Welcome to the playground! Here is your session number: ", getRandomInt())
 
-	counter := Counter{value: 0}
-	for i := 1; i < 10000000; i++ {
-		go counter.getNewCounter()
+	//counter := Counter{value: 0}
+	//for i := 1; i < 10000000; i++ {
+	//	go counter.getNewCounter()
+	//}
+	//time.Sleep(time.Second)
+	//fmt.Print("final value: ", counter.value)
+
+	var mp = make(map[string]int)
+	_, ok := mp["12"]
+	if ok {
+		fmt.Println("YES")
+	} else {
+		fmt.Println("no")
 	}
-	time.Sleep(time.Second)
-	fmt.Print("final value: ", counter.value)
 }
 
 func main() {
