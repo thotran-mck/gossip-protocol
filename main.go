@@ -150,7 +150,7 @@ func distributedSession() {
 				neighbors := nodeMap[msg.Dest]
 				for _, dest := range neighbors {
 
-					n.Send(dest, body)
+					go n.Send(dest, body)
 				}
 			}
 		} else {
@@ -171,7 +171,7 @@ func distributedSession() {
 				//broadcast to others
 				neighbors := nodeMap[msg.Dest]
 				for _, dest := range neighbors {
-					n.Send(dest, body)
+					go n.Send(dest, body)
 				}
 			}
 		}
