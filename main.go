@@ -51,6 +51,15 @@ var (
 	globalId int64 = 1
 )
 
+func contains(s []int, e int) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
 //main code for distributed workshop series with Shawn Nguyen
 func distributedSession() {
 	n := maelstrom.NewNode()
@@ -99,9 +108,9 @@ func distributedSession() {
 
 	//===========task 3===========
 	var (
-		globalSet  []int
-		nodeMap    = make(map[string][]string) //map to store the topology
-		historyMap = make(map[string]int)      //map to keep track update history
+		globalSet []int
+		nodeMap   = make(map[string][]string) //map to store the topology
+		//historyMap = make(map[string]int)      //map to keep track update history
 	)
 
 	type ReadResp struct {
@@ -123,8 +132,6 @@ func distributedSession() {
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
-		//body.MsgType = "broadcast_ok"
-		//globalSet = append(globalSet, body.Message)
 
 		if len(body.TrackKey) == 0 {
 			globalSet = append(globalSet, body.Message)
@@ -132,9 +139,9 @@ func distributedSession() {
 			//save to history map
 			timeKey := fmt.Sprintf("%s_%d", msg.Dest, time.Now().UnixMicro())
 
-			lock.Lock()
-			historyMap[timeKey] = body.Message
-			lock.Unlock()
+			//lock.Lock()
+			//historyMap[timeKey] = body.Message
+			//lock.Unlock()
 
 			body.TrackKey = timeKey
 
@@ -142,19 +149,13 @@ func distributedSession() {
 			if nodeMap[msg.Dest] != nil {
 				neighbors := nodeMap[msg.Dest]
 				for _, dest := range neighbors {
-					//n.RPC(dest, body, func(msg maelstrom.Message) error {
-					//	//do nothing for now
-					//	return nil
-					//})
 
 					n.Send(dest, body)
 				}
 			}
 		} else {
 			//check key exists
-			lock.Lock()
-			_, ok := historyMap[body.TrackKey]
-			lock.Unlock()
+			ok := contains(globalSet, body.Message)
 
 			if ok {
 				//do nothing
@@ -163,20 +164,14 @@ func distributedSession() {
 				globalSet = append(globalSet, body.Message)
 
 				//save history
-				lock.Lock()
-				historyMap[body.TrackKey] = body.Message
-				lock.Unlock()
+				//lock.Lock()
+				//historyMap[body.TrackKey] = body.Message
+				//lock.Unlock()
 
 				//broadcast to others
 				neighbors := nodeMap[msg.Dest]
 				for _, dest := range neighbors {
-					//n.RPC(dest, body, func(msg maelstrom.Message) error {
-					//	//do nothing for now
-					//	return nil
-					//})
-
 					n.Send(dest, body)
-
 				}
 			}
 		}
