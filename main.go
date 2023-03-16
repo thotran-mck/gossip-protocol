@@ -122,11 +122,6 @@ func distributedSession() {
 		MsgType string `json:"type"`
 	}
 
-	type BroadcastReq struct {
-		Req
-		TrackKey string `json:"track_key"`
-	}
-
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
 		var body BroadcastReq
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -149,8 +144,7 @@ func distributedSession() {
 			if nodeMap[msg.Dest] != nil {
 				neighbors := nodeMap[msg.Dest]
 				for _, dest := range neighbors {
-
-					go n.Send(dest, body)
+					go repeatSend(n, dest, body)
 				}
 			}
 		} else {
@@ -171,7 +165,7 @@ func distributedSession() {
 				//broadcast to others
 				neighbors := nodeMap[msg.Dest]
 				for _, dest := range neighbors {
-					go n.Send(dest, body)
+					go repeatSend(n, dest, body)
 				}
 			}
 		}
@@ -215,6 +209,23 @@ func distributedSession() {
 
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+type BroadcastReq struct {
+	Req
+	TrackKey string `json:"track_key"`
+}
+
+var (
+	MaxRepeatBroadcast = 100
+)
+
+func repeatSend(n *maelstrom.Node, dest string, body BroadcastReq) {
+	clone := body
+	for i := 1; i < MaxRepeatBroadcast; i++ {
+		n.Send(dest, clone)
+		time.Sleep(time.Millisecond * 100)
 	}
 }
 
