@@ -9,31 +9,42 @@ import (
 	"time"
 )
 
+var (
+	counter   = Counter{value: 0}
+	globalSet []int
+	nodeMap   = make(map[string][]string) //map to store the topology
+	//historyMap = make(map[string]int)      //map to keep track update history
+)
+
+type ReadResp struct {
+	MsgType  string `json:"type"`
+	Messages []int  `json:"messages"`
+}
+type Task3aResp struct {
+	MsgId   int    `json:"msg_id"`
+	MsgType string `json:"type"`
+}
+type TopologyReq struct {
+	Req
+	Topology map[string][]string
+}
+type BroadcastReq struct {
+	Req
+	TrackKey string `json:"track_key"`
+}
 type Req struct {
 	MsgId   int    `json:"msg_id"`
 	MsgType string `json:"type"`
 	Message int    `json:"message"`
 }
-
 type Resp struct {
 	MsgId   int    `json:"msg_id"`
 	ID      string `json:"id"`
 	MsgType string `json:"type"`
 }
-
 type Counter struct {
 	mutex sync.Mutex
 	value int64
-}
-
-func (c *Counter) incCounter() {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	if c.value < 0 {
-		c.value = 0
-	}
-
-	c.value += 1
 }
 
 func (c *Counter) getNewCounter() int64 {
@@ -43,13 +54,6 @@ func (c *Counter) getNewCounter() int64 {
 
 	return c.value
 }
-
-var (
-	counter = Counter{value: 0}
-	//for cheating purpose
-	lock     sync.Mutex
-	globalId int64 = 1
-)
 
 func contains(s []int, e int) bool {
 	for _, a := range s {
@@ -65,7 +69,28 @@ func distributedSession() {
 	n := maelstrom.NewNode()
 
 	//===========task 1===========
-	n.Handle("echo", func(msg maelstrom.Message) error {
+	n.Handle("echo", echoHandler(n))
+
+	//===========task 2===========
+	n.Handle("generate", generate1Handler(n))
+
+	n.Handle("generate_cheat", generate2Handler(n))
+
+	//===========task 3===========
+
+	n.Handle("broadcast", broadcastHandler(n))
+
+	n.Handle("read", readHandler(n))
+
+	n.Handle("topology", topologyHandler(nodeMap, n))
+
+	if err := n.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func echoHandler(n *maelstrom.Node) func(msg maelstrom.Message) error {
+	return func(msg maelstrom.Message) error {
 		var body map[string]any
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
@@ -76,10 +101,11 @@ func distributedSession() {
 
 		// Echo the original message back with the updated message type.
 		return n.Reply(msg, body)
-	})
+	}
+}
 
-	//===========task 2===========
-	n.Handle("generate", func(msg maelstrom.Message) error {
+func generate1Handler(n *maelstrom.Node) func(msg maelstrom.Message) error {
+	return func(msg maelstrom.Message) error {
 		var body Req
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
@@ -91,9 +117,11 @@ func distributedSession() {
 				counter.getNewCounter()),
 			MsgType: "generate_ok",
 		})
-	})
+	}
+}
 
-	n.Handle("generate_cheat", func(msg maelstrom.Message) error {
+func generate2Handler(n *maelstrom.Node) func(msg maelstrom.Message) error {
+	return func(msg maelstrom.Message) error {
 		var body Req
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
@@ -104,25 +132,11 @@ func distributedSession() {
 			ID:      fmt.Sprintf("%d%d", body.MsgId, time.Now().UnixMicro()),
 			MsgType: "generate_ok",
 		})
-	})
-
-	//===========task 3===========
-	var (
-		globalSet []int
-		nodeMap   = make(map[string][]string) //map to store the topology
-		//historyMap = make(map[string]int)      //map to keep track update history
-	)
-
-	type ReadResp struct {
-		MsgType  string `json:"type"`
-		Messages []int  `json:"messages"`
 	}
-	type Task3aResp struct {
-		MsgId   int    `json:"msg_id"`
-		MsgType string `json:"type"`
-	}
+}
 
-	n.Handle("broadcast", func(msg maelstrom.Message) error {
+func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.Message) error {
+	return func(msg maelstrom.Message) error {
 		var body BroadcastReq
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
@@ -157,11 +171,6 @@ func distributedSession() {
 				//add new value to global set
 				globalSet = append(globalSet, body.Message)
 
-				//save history
-				//lock.Lock()
-				//historyMap[body.TrackKey] = body.Message
-				//lock.Unlock()
-
 				//broadcast to others
 				neighbors := nodeMap[msg.Dest]
 				for _, dest := range neighbors {
@@ -172,9 +181,11 @@ func distributedSession() {
 
 		return n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
 			MsgType: "broadcast_ok"})
-	})
+	}
+}
 
-	n.Handle("read", func(msg maelstrom.Message) error {
+func readHandler(n *maelstrom.Node) func(msg maelstrom.Message) error {
+	return func(msg maelstrom.Message) error {
 		var body Req
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
@@ -183,14 +194,11 @@ func distributedSession() {
 		body.MsgType = "read_ok"
 		resp := ReadResp{MsgType: "read_ok", Messages: globalSet}
 		return n.Reply(msg, resp)
-	})
-
-	type TopologyReq struct {
-		Req
-		Topology map[string][]string
 	}
+}
 
-	n.Handle("topology", func(msg maelstrom.Message) error {
+func topologyHandler(nodeMap map[string][]string, n *maelstrom.Node) func(msg maelstrom.Message) error {
+	return func(msg maelstrom.Message) error {
 		var body TopologyReq
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
@@ -205,27 +213,22 @@ func distributedSession() {
 		}
 
 		return n.Reply(msg, &Task3aResp{MsgId: body.MsgId, MsgType: "topology_ok"})
-	})
-
-	if err := n.Run(); err != nil {
-		log.Fatal(err)
 	}
-}
-
-type BroadcastReq struct {
-	Req
-	TrackKey string `json:"track_key"`
 }
 
 var (
 	MaxRepeatBroadcast = 100
+	DelayMilisecond    = 100
 )
 
 func repeatSend(n *maelstrom.Node, dest string, body BroadcastReq) {
 	clone := body
 	for i := 1; i < MaxRepeatBroadcast; i++ {
-		n.Send(dest, clone)
-		time.Sleep(time.Millisecond * 100)
+		go n.RPC(dest, clone, func(msg maelstrom.Message) error {
+			return nil
+		})
+
+		time.Sleep(time.Millisecond * (time.Duration(DelayMilisecond)))
 	}
 }
 
