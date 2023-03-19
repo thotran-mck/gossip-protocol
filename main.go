@@ -172,10 +172,10 @@ func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.Message) error {
 				globalSet = append(globalSet, body.Message)
 
 				//broadcast to others
-				neighbors := nodeMap[msg.Dest]
-				for _, dest := range neighbors {
-					go repeatSend(n, dest, body)
-				}
+				//neighbors := nodeMap[msg.Dest]
+				//for _, dest := range neighbors {
+				//	go repeatSend(n, dest, body)
+				//}
 			}
 		}
 
@@ -218,17 +218,24 @@ func topologyHandler(nodeMap map[string][]string, n *maelstrom.Node) func(msg ma
 
 var (
 	MaxRepeatBroadcast = 100
-	DelayMilisecond    = 100
+	DelayMilisecond    = 150
 )
 
 func repeatSend(n *maelstrom.Node, dest string, body BroadcastReq) {
 	clone := body
-	for i := 1; i < MaxRepeatBroadcast; i++ {
-		go n.RPC(dest, clone, func(msg maelstrom.Message) error {
-			return nil
-		})
+	stopSignal := make(chan int)
 
-		time.Sleep(time.Millisecond * (time.Duration(DelayMilisecond)))
+	//send msg to destination node
+	go n.RPC(dest, clone, func(msg maelstrom.Message) error {
+		stopSignal <- 1
+		return nil
+	})
+
+	select {
+	case <-stopSignal:
+		return
+	case <-time.After(time.Millisecond * time.Duration(DelayMilisecond)):
+		repeatSend(n, dest, body) //send again in case of no response
 	}
 }
 
