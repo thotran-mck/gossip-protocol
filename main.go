@@ -79,8 +79,8 @@ func distributedSession() {
 
 	//===========task 3===========
 
-	//n.Handle("broadcast", broadcastHandlerTypeTotal(n))
-	n.Handle("broadcast", broadcastHandler(n))
+	n.Handle("broadcast", broadcastHandlerTypeTotal(n))
+	//n.Handle("broadcast", broadcastHandler(n))
 
 	n.Handle("read", readHandler(n))
 
@@ -145,13 +145,14 @@ func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
 			return err
 		}
 
-		n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
+		go n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
 			MsgType: "broadcast_ok"})
 
 		//receive msg from client
 		if len(body.TrackKey) == 0 {
 			readLock.Lock()
-			globalValues = append(globalValues, body.Message)
+			//globalValues = append(globalValues, body.Message)
+			globalSets[body.Message] = 1
 			readLock.Unlock()
 
 			body.TrackKey = fmt.Sprintf("%s", msg.Dest)
@@ -165,20 +166,24 @@ func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
 			}
 		} else { //receive msg from another node
 			//check key exists
-			ok := contains(globalValues, body.Message)
+			readLock.RLock()
+			_, ok := globalSets[body.Message]
+			readLock.RUnlock()
+			//ok := contains(globalValues, body.Message)
 			//log.Printf("do i contain %d? %t", body.Message, ok)
 
 			if ok {
 				//do nothing
 			} else {
 				//add new value to global set
-				log.Printf("before %v", globalValues)
+				//log.Printf("before %v", globalValues)
 
 				readLock.Lock()
-				globalValues = append(globalValues, body.Message)
+				//globalValues = append(globalValues, body.Message)
+				globalSets[body.Message] = 1
 				readLock.Unlock()
 
-				log.Printf("after %v", globalValues)
+				//log.Printf("after %v", globalValues)
 			}
 		}
 		return nil
@@ -193,10 +198,14 @@ func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.
 			return err
 		}
 
+		n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
+			MsgType: "broadcast_ok"})
+
 		//receive msg from client
 		if len(body.TrackKey) == 0 {
 			readLock.Lock()
-			globalValues = append(globalValues, body.Message)
+			//globalValues = append(globalValues, body.Message)
+			globalSets[body.Message] = 1
 			readLock.Unlock()
 
 			body.TrackKey = fmt.Sprintf("%s", msg.Dest)
@@ -211,18 +220,19 @@ func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.
 			}
 		} else { //receive msg from another node
 			//check key exists
-			//ok := contains(globalValues, body.Message)
-			////log.Printf("do i contain %d? %t", body.Message, ok)
-			//
-			//if ok {
-			//	//do nothing
-			//} else
-			{
+			readLock.RLock()
+			_, ok := globalSets[body.Message]
+			readLock.RUnlock()
+
+			if ok {
+				//do nothing
+			} else {
 				//add new value to global set
 				//log.Printf("before %v", globalValues)
 
 				readLock.Lock()
-				globalValues = append(globalValues, body.Message)
+				//globalValues = append(globalValues, body.Message)
+				globalSets[body.Message] = 1
 				readLock.Unlock()
 
 				//log.Printf("after %v", globalValues)
@@ -233,13 +243,11 @@ func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.
 					if dest != msg.Src {
 						//n.Send(dest, body)
 
-						repeatSend(n, dest, body)
+						go repeatSend(n, dest, body)
 					}
 				}
 			}
 		}
-		n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
-			MsgType: "broadcast_ok"})
 
 		return nil
 	}
@@ -248,8 +256,15 @@ func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.
 func readHandler(n *maelstrom.Node) func(msg maelstrom.Message) error {
 	return func(msg maelstrom.Message) error {
 		readLock.RLock()
-		values := globalValues
+		//values := globalValues
+
+		values := []int{}
+
+		for key := range globalSets {
+			values = append(values, key)
+		}
 		readLock.RUnlock()
+
 		return n.Reply(msg, ReadResp{MsgType: "read_ok",
 			Messages: values})
 	}
