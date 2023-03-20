@@ -79,8 +79,8 @@ func distributedSession() {
 
 	//===========task 3===========
 
-	n.Handle("broadcast", broadcastHandlerTypeTotal(n))
-	//n.Handle("broadcast", broadcastHandler(n))
+	//n.Handle("broadcast", broadcastHandlerTypeTotal(n))
+	n.Handle("broadcast", broadcastHandler(n))
 
 	n.Handle("read", readHandler(n))
 
@@ -154,15 +154,11 @@ func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
 			globalValues = append(globalValues, body.Message)
 			readLock.Unlock()
 
-			//save to history map
-			timeKey := fmt.Sprintf("%s_%d", msg.Dest, time.Now().UnixMicro())
-
-			body.TrackKey = timeKey
+			body.TrackKey = fmt.Sprintf("%s", msg.Dest)
 
 			//broadcast to others
 			if nodeMap[msg.Dest] != nil {
-				neighbors := nodeMap[msg.Dest]
-				for _, dest := range neighbors {
+				for _, dest := range nodeMap[msg.Dest] {
 					//n.Send(dest, body)
 					go repeatSend(n, dest, body)
 				}
@@ -170,11 +166,7 @@ func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
 		} else { //receive msg from another node
 			//check key exists
 			ok := contains(globalValues, body.Message)
-			log.Printf("do i contain %d? %t", body.Message, ok)
-
-			//readLock.RLock()
-			//_, ok := globalSets[body.Message]
-			//readLock.RUnlock()
+			//log.Printf("do i contain %d? %t", body.Message, ok)
 
 			if ok {
 				//do nothing
@@ -187,20 +179,6 @@ func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
 				readLock.Unlock()
 
 				log.Printf("after %v", globalValues)
-
-				//readLock.Lock()
-				//globalSets[body.Message] = 1
-				//readLock.Unlock()
-
-				//broadcast to others
-				//neighbors := nodeMap[msg.Dest]
-				//for _, dest := range neighbors {
-				//	if dest != msg.Src {
-				//		n.Send(dest, body)
-				//
-				//		//go repeatSend(n, dest, body)
-				//	}
-				//}
 			}
 		}
 		return nil
@@ -215,37 +193,31 @@ func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.
 			return err
 		}
 
-		n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
-			MsgType: "broadcast_ok"})
-
 		//receive msg from client
 		if len(body.TrackKey) == 0 {
 			readLock.Lock()
 			globalValues = append(globalValues, body.Message)
 			readLock.Unlock()
 
-			//save to history map
-			timeKey := fmt.Sprintf("%s_%d", msg.Dest, time.Now().UnixMicro())
-
-			body.TrackKey = timeKey
+			body.TrackKey = fmt.Sprintf("%s", msg.Dest)
 
 			//broadcast to others
 			if nodeMap[msg.Dest] != nil {
 				neighbors := nodeMap[msg.Dest]
 				for _, dest := range neighbors {
 					//n.Send(dest, body)
-
-					repeatSend(n, dest, body)
+					go repeatSend(n, dest, body)
 				}
 			}
 		} else { //receive msg from another node
 			//check key exists
-			ok := contains(globalValues, body.Message)
-			//log.Printf("do i contain %d? %t", body.Message, ok)
-
-			if ok {
-				//do nothing
-			} else {
+			//ok := contains(globalValues, body.Message)
+			////log.Printf("do i contain %d? %t", body.Message, ok)
+			//
+			//if ok {
+			//	//do nothing
+			//} else
+			{
 				//add new value to global set
 				//log.Printf("before %v", globalValues)
 
@@ -266,15 +238,18 @@ func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.
 				}
 			}
 		}
+		n.Reply(msg, &Task3aResp{MsgId: body.MsgId,
+			MsgType: "broadcast_ok"})
+
 		return nil
 	}
 }
 
 func readHandler(n *maelstrom.Node) func(msg maelstrom.Message) error {
 	return func(msg maelstrom.Message) error {
-		//readLock.RLock()
+		readLock.RLock()
 		values := globalValues
-		//readLock.RUnlock()
+		readLock.RUnlock()
 		return n.Reply(msg, ReadResp{MsgType: "read_ok",
 			Messages: values})
 	}
@@ -288,20 +263,6 @@ func topologyHandler(nodeMap map[string][]string, n *maelstrom.Node) func(msg ma
 		}
 
 		go n.Reply(msg, &Task3aResp{MsgId: body.MsgId, MsgType: "topology_ok"})
-
-		//custom topology
-		//for k := range body.Topology {
-		//	key := k
-		//	nodeMap[key] = make([]string, 24)
-		//	idx := 0
-		//	for i := 0; i < len(body.Topology); i++ {
-		//		val := fmt.Sprintf("n%d", i)
-		//		if val != key {
-		//			nodeMap[key][idx] = val
-		//			idx++
-		//		}
-		//	}
-		//}
 
 		for k, v := range body.Topology {
 			clone := make([]string, len(v))
@@ -331,7 +292,7 @@ func repeatSend(n *maelstrom.Node, dest string, body BroadcastReq) {
 	select {
 	case <-stopSignal:
 		return
-	case <-time.After(2 * time.Second):
+	case <-time.After(DelayMillisecond * time.Millisecond):
 		log.Printf("retry to send %+v", body)
 		repeatSend(n, dest, body) //send again in case of no response
 	}
@@ -349,6 +310,14 @@ func repeatSendNoAck(n *maelstrom.Node, dest string, body BroadcastReq) {
 
 //local playground sections for try things
 func testingFunc() {
+	m := map[string]string{
+		"java": "coffee",
+		"go":   "verb",
+		"ruby": "gemstone",
+	}
+
+	fmt.Println("len: ", len(m))
+
 	val := make(chan int)
 	go func() {
 		time.Sleep(2 * time.Second)
