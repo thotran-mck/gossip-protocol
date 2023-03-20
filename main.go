@@ -56,15 +56,6 @@ func (c *Counter) getNewCounter() int64 {
 	return c.value
 }
 
-func contains(s []int, e int) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
-}
-
 //main code for distributed workshop series with Shawn Nguyen
 func distributedSession() {
 	n := maelstrom.NewNode()
@@ -151,7 +142,6 @@ func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
 		//receive msg from client
 		if len(body.TrackKey) == 0 {
 			readLock.Lock()
-			//globalValues = append(globalValues, body.Message)
 			globalSets[body.Message] = 1
 			readLock.Unlock()
 
@@ -169,21 +159,14 @@ func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
 			readLock.RLock()
 			_, ok := globalSets[body.Message]
 			readLock.RUnlock()
-			//ok := contains(globalValues, body.Message)
-			//log.Printf("do i contain %d? %t", body.Message, ok)
 
 			if ok {
 				//do nothing
 			} else {
 				//add new value to global set
-				//log.Printf("before %v", globalValues)
-
 				readLock.Lock()
-				//globalValues = append(globalValues, body.Message)
 				globalSets[body.Message] = 1
 				readLock.Unlock()
-
-				//log.Printf("after %v", globalValues)
 			}
 		}
 		return nil
@@ -279,12 +262,11 @@ func topologyHandler(nodeMap map[string][]string, n *maelstrom.Node) func(msg ma
 
 		go n.Reply(msg, &Task3aResp{MsgId: body.MsgId, MsgType: "topology_ok"})
 
-		for k, v := range body.Topology {
-			clone := make([]string, len(v))
-			copy(clone, v)
-			key := k
-			nodeMap[key] = clone
-		}
+		v := body.Topology[msg.Dest]
+		clone := make([]string, len(v))
+		copy(clone, v)
+		key := msg.Dest
+		nodeMap[key] = clone
 
 		return nil
 	}
@@ -351,5 +333,5 @@ func testingFunc() {
 
 func main() {
 	distributedSession()
-	testingFunc()
+	//testingFunc()
 }
