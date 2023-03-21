@@ -10,11 +10,11 @@ import (
 )
 
 var (
-	counter      = Counter{value: 0}
-	globalValues []int
-	nodeMap      = make(map[string][]string) //map to store the topology
-	globalSets   = make(map[int]int)
-	readLock     sync.RWMutex
+	counter          = Counter{value: 0}
+	nodeMap          = make(map[string][]string) //map to store the topology
+	globalSets       = make(map[int]int)
+	readLock         sync.RWMutex
+	DelayMillisecond time.Duration = 1000
 )
 
 type ReadResp struct {
@@ -48,7 +48,7 @@ type Counter struct {
 	value int64
 }
 
-func (c *Counter) getNewCounter() int64 {
+func (c *Counter) getNewValue() int64 {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.value += 1
@@ -107,7 +107,7 @@ func generate1Handler(n *maelstrom.Node) func(msg maelstrom.Message) error {
 		return n.Reply(msg, Resp{
 			MsgId: body.MsgId,
 			ID: fmt.Sprintf("%d-%d", time.Now().UnixMicro(),
-				counter.getNewCounter()),
+				counter.getNewValue()),
 			MsgType: "generate_ok",
 		})
 	}
@@ -129,7 +129,7 @@ func generate2Handler(n *maelstrom.Node) func(msg maelstrom.Message) error {
 }
 
 func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
-	Message) error {
+Message) error {
 	return func(msg maelstrom.Message) error {
 		var body BroadcastReq
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -155,26 +155,17 @@ func broadcastHandlerTypeTotal(n *maelstrom.Node) func(msg maelstrom.
 				}
 			}
 		} else { //receive msg from another node
-			//check key exists
-			readLock.RLock()
-			_, ok := globalSets[body.Message]
-			readLock.RUnlock()
-
-			if ok {
-				//do nothing
-			} else {
-				//add new value to global set
-				readLock.Lock()
-				globalSets[body.Message] = 1
-				readLock.Unlock()
-			}
+			//add new value to global set, don't have to check duplicate
+			readLock.Lock()
+			globalSets[body.Message] = 1
+			readLock.Unlock()
 		}
 		return nil
 	}
 }
 
 func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.
-	Message) error {
+Message) error {
 	return func(msg maelstrom.Message) error {
 		var body BroadcastReq
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -239,7 +230,6 @@ func broadcastHandler(n *maelstrom.Node) func(msg maelstrom.
 func readHandler(n *maelstrom.Node) func(msg maelstrom.Message) error {
 	return func(msg maelstrom.Message) error {
 		readLock.RLock()
-		//values := globalValues
 
 		values := []int{}
 
@@ -271,10 +261,6 @@ func topologyHandler(nodeMap map[string][]string, n *maelstrom.Node) func(msg ma
 		return nil
 	}
 }
-
-var (
-	DelayMillisecond time.Duration = 1000
-)
 
 func repeatSend(n *maelstrom.Node, dest string, body BroadcastReq) {
 	clone := body
